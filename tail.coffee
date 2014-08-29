@@ -1,7 +1,21 @@
 events= require("events")
 fs =require('fs')
+st=require('stream')
 
 environment = process.env['NODE_ENV'] || 'development'
+
+class TransformQ extends st.Transform
+  constructor:->
+    super()
+
+  _transform:(chunk)->
+    @buffer += chunk
+    parts = @buffer.split(@separator)
+    @buffer = parts.pop()
+    @emit("line", chunk) for chunk in parts
+
+  _flush:->
+    console.log("flush")
 
 class Tail extends events.EventEmitter
 
@@ -24,11 +38,17 @@ class Tail extends events.EventEmitter
   constructor:(@filename, @separator='\n', @fsWatchOptions = {}, @frombeginning=false) ->
     @buffer = ''
     @internalDispatcher = new events.EventEmitter()
-    @queue = []
+
+    @transformer = new TransformQ()
+    @transformer.on 'end',->
+      console.log("transformer end")
+    @transformer.on 'finish',->
+      console.log("finish end")
+
     @isWatching = false
     stats =  fs.statSync(@filename)
-    @internalDispatcher.on 'next',=>
-      @readBlock()
+    # @internalDispatcher.on 'next',=>
+    #   @readBlock()
     @pos = if @frombeginning then 0 else stats.size
     @watch()
 
@@ -45,9 +65,11 @@ class Tail extends events.EventEmitter
       stats = fs.statSync(@filename)
       @pos = stats.size if stats.size < @pos #scenario where texts is not appended but it's actually a w+
       if stats.size > @pos
-        @queue.push({start: @pos, end: stats.size})
+        block = {start: @pos, end: stats.size}
+        fileStream = fs.createReadStream(@filename, {start:block.start, end:block.end-1, encoding:"utf-8"})
+        fileStream.pipe(@transformer,{end:false})
+
         @pos = stats.size
-        @internalDispatcher.emit("next") if @queue.length is 1
     else if e is 'rename'
       @unwatch()
       setTimeout (=> @watch()), 1000

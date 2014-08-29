@@ -1,4 +1,5 @@
-Tail = require('tail').Tail;
+//Tail = require('tail').Tail;
+Tail = require('../tail').Tail;
 
 tail = new Tail("./test/log.txt");
 
